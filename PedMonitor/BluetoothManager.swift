@@ -6,7 +6,7 @@
 //  Copyright © 2017 Imprivata. All rights reserved.
 //
 
-import Foundation
+import UIKit
 import CoreBluetooth
 
 protocol BluetoothManagerDelegate {
@@ -21,9 +21,10 @@ final class BluetoothManager: NSObject {
     
     private var peripheralManager: CBPeripheralManager!
     
-    var delegate:BluetoothManagerDelegate?
+    private var interval: TimeInterval = 10.0
+    private var uiBackgroundTaskIdentifier: UIBackgroundTaskIdentifier = UIBackgroundTaskInvalid
     
-    var interval: TimeInterval = 10.0
+    var delegate:BluetoothManagerDelegate?
     
     override init() {
         super.init()
@@ -86,6 +87,7 @@ extension BluetoothManager: CBPeripheralManagerDelegate {
     }
     
     func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {
+        beginBackgroundTask()
         log("didReceiveWriteRequests \(requests.count)")
         for request in requests {
             // let characteristic = request.characteristic
@@ -105,12 +107,37 @@ extension BluetoothManager: CBPeripheralManagerDelegate {
     }
     
     func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveRead request: CBATTRequest) {
-        log("peripheralManager didReceiveRead request \(request.characteristic.uuid.uuidString)")
+        log("peripheralManager didReceiveRead request")
         delegate?.readMotionData(interval: interval) { dataString in
             log("data: \(dataString)")
             request.value = dataString.data(using: .utf8, allowLossyConversion: false)
             self.peripheralManager.respond(to: request, withResult: .success)
+            self.endBackgroundTask()
         }
+    }
+    
+}
+
+// MARK: background task
+
+extension BluetoothManager {
+    
+    private func beginBackgroundTask() {
+        print(#function)
+        uiBackgroundTaskIdentifier = UIApplication.shared.beginBackgroundTask(expirationHandler: {
+            [unowned self] in
+            print("uiBackgroundTaskIdentifier \(self.uiBackgroundTaskIdentifier) expired")
+            UIApplication.shared.endBackgroundTask(self.uiBackgroundTaskIdentifier)
+            self.uiBackgroundTaskIdentifier = UIBackgroundTaskInvalid
+        })
+        print("uiBackgroundTaskIdentifier \(uiBackgroundTaskIdentifier)")
+    }
+    
+    private func endBackgroundTask() {
+        print(#function)
+        print("uiBackgroundTaskIdentifier \(uiBackgroundTaskIdentifier)")
+        UIApplication.shared.endBackgroundTask(uiBackgroundTaskIdentifier)
+        uiBackgroundTaskIdentifier = UIBackgroundTaskInvalid
     }
     
 }
