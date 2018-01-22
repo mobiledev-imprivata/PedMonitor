@@ -15,7 +15,6 @@ class ViewController: UIViewController {
     
     private var bluetoothManager: BluetoothManager!
     private let pedometer = CMPedometer()
-    private var uiBackgroundTaskIdentifier: UIBackgroundTaskIdentifier = UIBackgroundTaskInvalid
     
     deinit {
         NotificationCenter.default.removeObserver(self)
@@ -52,12 +51,10 @@ class ViewController: UIViewController {
     
     @objc func didBecomeActive() {
         log(#function)
-        endBackgroundTask()
     }
     
     @objc func willResignActive() {
         log(#function)
-        beginBackgroundTask()
     }
     
     @objc func appendMessage(_ notification: Notification) {
@@ -128,29 +125,3 @@ extension ViewController: BluetoothManagerDelegate {
     }
     
 }
-
-// MARK: background task
-
-extension ViewController {
-    
-    private func beginBackgroundTask() {
-        log(#function)
-        uiBackgroundTaskIdentifier = UIApplication.shared.beginBackgroundTask(expirationHandler: {
-            [unowned self] in
-            log("uiBackgroundTaskIdentifier \(self.uiBackgroundTaskIdentifier) expired")
-            UIApplication.shared.endBackgroundTask(self.uiBackgroundTaskIdentifier)
-            self.uiBackgroundTaskIdentifier = UIBackgroundTaskInvalid
-        })
-        log("uiBackgroundTaskIdentifier \(uiBackgroundTaskIdentifier)")
-    }
-    
-    private func endBackgroundTask() {
-        log(#function)
-        log("uiBackgroundTaskIdentifier \(uiBackgroundTaskIdentifier)")
-        UIApplication.shared.endBackgroundTask(uiBackgroundTaskIdentifier)
-        uiBackgroundTaskIdentifier = UIBackgroundTaskInvalid
-    }
-    
-}
-
-
