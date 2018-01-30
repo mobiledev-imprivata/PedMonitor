@@ -110,7 +110,10 @@ extension BluetoothManager: CBPeripheralManagerDelegate {
     func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveRead request: CBATTRequest) {
         beginBackgroundTask()
         log("peripheralManager didReceiveRead request")
+        let start = Date()
         delegate?.readMotionData(interval: interval) { dataString in
+            let intervalString = String(format: "%.6f", -start.timeIntervalSinceNow)
+            log("received motion data in \(intervalString) secs")
             log("data: \(dataString)")
             request.value = dataString.data(using: .utf8, allowLossyConversion: false)
             self.peripheralManager.respond(to: request, withResult: .success)
