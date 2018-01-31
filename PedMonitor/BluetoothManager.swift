@@ -13,43 +13,59 @@ protocol BluetoothManagerDelegate {
     func readMotionData(interval: TimeInterval, completion: @escaping (String) -> Void)
 }
 
+struct Constants {
+    static let serviceUUID                     = CBUUID(string: "B6108A9B-BF75-456B-8DCB-6942F2A3E5BA")
+    static let setIntervalCharacteristicUUID   = CBUUID(string: "AB519B66-6215-48D8-8727-4D41FB35DA8F")
+    static let getMotionDataCharacteristicUUID = CBUUID(string: "9D5F61B3-23E9-4812-8AF3-9536B9ADAC46")
+    
+    static let restoreIdentiferKey = "com.imprivata.pedmonitor.restoreIdentiferKey"
+}
+
 final class BluetoothManager: NSObject {
     
-    private let serviceUUID                     = CBUUID(string: "B6108A9B-BF75-456B-8DCB-6942F2A3E5BA")
-    private let setIntervalCharacteristicUUID   = CBUUID(string: "AB519B66-6215-48D8-8727-4D41FB35DA8F")
-    private let getMotionDataCharacteristicUUID = CBUUID(string: "9D5F61B3-23E9-4812-8AF3-9536B9ADAC46")
+    var delegate:BluetoothManagerDelegate?
     
-    private var peripheralManager: CBPeripheralManager!
+    private var service: CBMutableService = {
+        let service = CBMutableService(type: Constants.serviceUUID, primary: true)
+        let setIntervalCharacteristic = CBMutableCharacteristic(type: Constants.setIntervalCharacteristicUUID, properties: .write, value: nil, permissions: .writeable)
+        let getMotionDataCharacteristic = CBMutableCharacteristic(type: Constants.getMotionDataCharacteristicUUID, properties: .read, value: nil, permissions: .readable)
+        service.characteristics = [setIntervalCharacteristic, getMotionDataCharacteristic]
+        return service
+    }()
+    
+    private var isServiceInitialized = false
+    
+    private var peripheralManager: CBPeripheralManager?
     
     private var interval: TimeInterval = 10.0
     private var uiBackgroundTaskIdentifier: UIBackgroundTaskIdentifier = UIBackgroundTaskInvalid
     
-    var delegate:BluetoothManagerDelegate?
-    
-    override init() {
-        super.init()
-        peripheralManager = CBPeripheralManager(delegate: self, queue: nil)
-    }
-    
-    private func addService() {
-        log("addService")
-        peripheralManager.stopAdvertising()
-        peripheralManager.removeAllServices()
-        let service = CBMutableService(type: serviceUUID, primary: true)
-        let setIntervalCharacteristic = CBMutableCharacteristic(type: setIntervalCharacteristicUUID, properties: .write, value: nil, permissions: .writeable)
-        let getMotionDataCharacteristic = CBMutableCharacteristic(type: getMotionDataCharacteristicUUID, properties: .read, value: nil, permissions: .readable)
-        service.characteristics = [setIntervalCharacteristic, getMotionDataCharacteristic]
-        peripheralManager.add(service)
-    }
-    
-    private func startAdvertising() {
+    func startAdvertising() {
         log("startAdvertising")
-        peripheralManager.startAdvertising([CBAdvertisementDataServiceUUIDsKey: [serviceUUID]])
+        guard peripheralManager == nil else { return }
+        peripheralManager = CBPeripheralManager(delegate: self, queue: nil, options: [CBPeripheralManagerOptionRestoreIdentifierKey: Constants.restoreIdentiferKey])
+    }
+    
+    func stopAdvertising() {
+        log("stopAdvertising")
+        guard peripheralManager == peripheralManager else { return }
+        peripheralManager?.stopAdvertising()
+        self.peripheralManager = nil
     }
     
 }
 
 extension BluetoothManager: CBPeripheralManagerDelegate {
+    
+    func peripheralManager(_ peripheral: CBPeripheralManager, willRestoreState dict: [String : Any]) {
+        let message = "peripheralManager willRestoreState"
+        log(message)
+        if let service = (dict[CBPeripheralManagerRestoredStateServicesKey] as? [CBMutableService])?.first {
+            log("found service to restore")
+            self.service = service
+            isServiceInitialized = true
+        }
+    }
     
     func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
         var caseString: String!
@@ -68,17 +84,31 @@ extension BluetoothManager: CBPeripheralManagerDelegate {
             caseString = "poweredOn"
         }
         log("peripheralManagerDidUpdateState \(caseString!)")
+        
         if peripheral.state == .poweredOn {
-            addService()
+            log("isServiceInitialized \(isServiceInitialized)")
+            if isServiceInitialized {
+                log("peripheral.isAdvertising \(peripheral.isAdvertising)")
+                if !peripheral.isAdvertising {
+                    peripheral.startAdvertising([CBAdvertisementDataServiceUUIDsKey: [service.uuid]])
+                }
+            }
+            else {
+                peripheral.removeAllServices()
+                peripheral.add(service)
+            }
+        }
+        else if peripheral.state == .poweredOff {
+            stopAdvertising()
         }
     }
     
     func peripheralManager(_ peripheral: CBPeripheralManager, didAdd service: CBService, error: Error?) {
         let message = "peripheralManager didAddService " + (error == nil ? "ok" :  ("error " + error!.localizedDescription))
         log(message)
-        if error == nil {
-            startAdvertising()
-        }
+        guard error == nil else { return }
+        isServiceInitialized = true
+        peripheral.startAdvertising([CBAdvertisementDataServiceUUIDsKey: [service.uuid]])
     }
     
     func peripheralManagerDidStartAdvertising(_ peripheral: CBPeripheralManager, error: Error?) {
@@ -102,7 +132,7 @@ extension BluetoothManager: CBPeripheralManagerDelegate {
             }
             log("setting interval to \(interval)")
             self.interval = interval
-            peripheralManager.respond(to: request, withResult: .success)
+            peripheral.respond(to: request, withResult: .success)
         }
         endBackgroundTask()
     }
@@ -116,7 +146,7 @@ extension BluetoothManager: CBPeripheralManagerDelegate {
             log("received motion data in \(intervalString) secs")
             log("data: \(dataString)")
             request.value = dataString.data(using: .utf8, allowLossyConversion: false)
-            self.peripheralManager.respond(to: request, withResult: .success)
+            peripheral.respond(to: request, withResult: .success)
         }
         endBackgroundTask()
     }

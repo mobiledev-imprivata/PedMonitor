@@ -33,6 +33,7 @@ class ViewController: UIViewController {
         
         bluetoothManager = BluetoothManager()
         bluetoothManager.delegate = self
+        bluetoothManager.startAdvertising()
     }
     
     override func viewDidAppear(_ animated: Bool) {
@@ -40,6 +41,9 @@ class ViewController: UIViewController {
         
         log("viewDidAppear")
         
+        let launchOptions = (UIApplication.shared.delegate as! AppDelegate).launchOptions
+        log("launchOptions \(launchOptions ?? [:])")
+
         startPedometerUpdates()
         startPedometerEventUpdates()
     }
